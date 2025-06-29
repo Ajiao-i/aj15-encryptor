@@ -6,73 +6,85 @@ function App() {
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [mode, setMode] = useState("encrypt");
-  const [uploadMsg, setUploadMsg] = useState("");
+  const [dictStatus, setDictStatus] = useState("⏳ 正在加载五笔字典...");
 
-  // 页面初始化时加载字典
+  // 页面加载时加载字典
   useEffect(() => {
-    loadWubiDict().then(() => {
-      setUploadMsg("🔠 字典加载完成，可以使用加解密功能");
-    }).catch(() => {
-      setUploadMsg("❌ 字典加载失败，请检查 wubi86_full.txt");
-    });
+    loadWubiDict()
+      .then(() => {
+        setDictStatus("✅ 字典加载成功，可以使用");
+      })
+      .catch(() => {
+        setDictStatus("❌ 字典加载失败，请检查 wubi86_full.txt 是否存在");
+      });
   }, []);
 
-  // 点击按钮时调用异步函数
-  const handleRun = async () => {
+  const handleRun = () => {
     if (!input) {
-      setOutput("");
+      setOutput("请输入内容");
       return;
     }
 
     if (mode === "encrypt") {
-      const cipher = await aj15_encrypt(input);
-      setOutput(cipher);
+      const result = aj15_encrypt(input);
+      setOutput(result);
     } else {
-      const plain = await aj15_decrypt(input);
-      setOutput(plain);
+      const result = aj15_decrypt(input);
+      setOutput(result);
     }
   };
 
   return (
-    <div style={{ maxWidth: 600, margin: "40px auto", padding: 20, fontFamily: "sans-serif" }}>
-      <h1>AJ‑15 中文加解密（支持完整五笔字典）</h1>
-
-      <p>{uploadMsg}</p>
+    <div style={{ maxWidth: 640, margin: "40px auto", padding: 24, fontFamily: "sans-serif" }}>
+      <h1>🔐 AJ‑15 中文加密演示</h1>
+      <p>{dictStatus}</p>
 
       <textarea
+        placeholder="请输入原文或密文"
         rows={4}
-        placeholder="请输入中文原文或密文"
         value={input}
         onChange={(e) => setInput(e.target.value)}
-        style={{ width: "100%", marginBottom: 12 }}
+        style={{ width: "100%", marginBottom: 16 }}
       />
 
       <div style={{ marginBottom: 12 }}>
         <button
           onClick={() => setMode("encrypt")}
-          style={{ marginRight: 8, backgroundColor: mode === "encrypt" ? "#4caf50" : "" }}
+          style={{
+            marginRight: 8,
+            padding: "8px 12px",
+            backgroundColor: mode === "encrypt" ? "#4caf50" : "#ddd",
+            color: mode === "encrypt" ? "white" : "black"
+          }}
         >
-          加密模式
+          加密
         </button>
 
         <button
           onClick={() => setMode("decrypt")}
-          style={{ backgroundColor: mode === "decrypt" ? "#4caf50" : "" }}
+          style={{
+            padding: "8px 12px",
+            backgroundColor: mode === "decrypt" ? "#4caf50" : "#ddd",
+            color: mode === "decrypt" ? "white" : "black"
+          }}
         >
-          解密模式
+          解密
         </button>
       </div>
 
-      <button onClick={handleRun} style={{ width: "100%", padding: 8 }}>
+      <button
+        onClick={handleRun}
+        style={{ width: "100%", padding: "10px", backgroundColor: "#2196f3", color: "white" }}
+      >
         执行 {mode === "encrypt" ? "加密" : "解密"}
       </button>
 
-      <h3>输出结果</h3>
+      <h3 style={{ marginTop: 24 }}>输出结果</h3>
       <textarea
-        rows={4}
         readOnly
+        rows={4}
         value={output}
-        style={{ width: "100%", whiteSpace: "pre-wrap" }}
+        style={{ width: "100%", backgroundColor: "#f5f5f5", padding: 10 }}
       />
     </div>
   );
