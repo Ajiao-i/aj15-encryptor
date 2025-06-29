@@ -118,3 +118,5 @@ function extractUTF8Chars(str) {
   }
   return result;
 }
+export const loadDictionary = loadWubiDict;
+
