@@ -1,94 +1,95 @@
 import React, { useState, useEffect } from "react";
 import ReactDOM from "react-dom/client";
-import { aj15_encrypt, aj15_decrypt, loadWubiDict } from "../aj15_logic.js";
+import {
+  aj15_encrypt,
+  aj15_decrypt,
+  loadWubiDict
+} from "../aj15_logic.js";
 
 function App() {
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [mode, setMode] = useState("encrypt");
-  const [dictStatus, setDictStatus] = useState("⏳ 正在加载五笔字典...");
+  const [dictLoaded, setDictLoaded] = useState(false);
 
-  // 页面加载时加载字典
   useEffect(() => {
-    loadWubiDict()
-      .then(() => {
-        setDictStatus("✅ 字典加载成功，可以使用");
-      })
-      .catch(() => {
-        setDictStatus("❌ 字典加载失败，请检查 wubi86_full.txt 是否存在");
-      });
+    loadWubiDict().then(() => {
+      setDictLoaded(true);
+    });
   }, []);
 
-  const handleRun = () => {
-    if (!input) {
-      setOutput("请输入内容");
+  const handleProcess = () => {
+    if (!dictLoaded) {
+      setOutput("字典未加载！");
       return;
     }
 
-    if (mode === "encrypt") {
-      const result = aj15_encrypt(input);
+    try {
+      const result =
+        mode === "encrypt"
+          ? aj15_encrypt(input)
+          : aj15_decrypt(input);
       setOutput(result);
-    } else {
-      const result = aj15_decrypt(input);
-      setOutput(result);
+    } catch (e) {
+      console.error(e);
+      setOutput("处理失败，请检查输入。");
     }
   };
 
   return (
-    <div style={{ maxWidth: 640, margin: "40px auto", padding: 24, fontFamily: "sans-serif" }}>
-      <h1>🔐 AJ‑15 中文加密系统</h1>
-      <p>{dictStatus}</p>
+    <div style={{ padding: "2em", fontFamily: "Arial" }}>
+      <h1>AJ-15 中文加密/解密工具</h1>
 
-      <textarea
-        placeholder="请输入原文或密文"
-        rows={4}
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        style={{ width: "100%", marginBottom: 16 }}
-      />
+      <div style={{ marginBottom: "1em" }}>
+        <textarea
+          rows={5}
+          style={{ width: "100%" }}
+          placeholder="请输入内容..."
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+        />
+      </div>
 
-      <div style={{ marginBottom: 12 }}>
-        <button
-          onClick={() => setMode("encrypt")}
-          style={{
-            marginRight: 8,
-            padding: "8px 12px",
-            backgroundColor: mode === "encrypt" ? "#4caf50" : "#ddd",
-            color: mode === "encrypt" ? "white" : "black"
-          }}
-        >
+      <div style={{ marginBottom: "1em" }}>
+        <label>
+          <input
+            type="radio"
+            name="mode"
+            value="encrypt"
+            checked={mode === "encrypt"}
+            onChange={() => setMode("encrypt")}
+          />
           加密
-        </button>
-
-        <button
-          onClick={() => setMode("decrypt")}
-          style={{
-            padding: "8px 12px",
-            backgroundColor: mode === "decrypt" ? "#4caf50" : "#ddd",
-            color: mode === "decrypt" ? "white" : "black"
-          }}
-        >
+        </label>
+        <label style={{ marginLeft: "1em" }}>
+          <input
+            type="radio"
+            name="mode"
+            value="decrypt"
+            checked={mode === "decrypt"}
+            onChange={() => setMode("decrypt")}
+          />
           解密
+        </label>
+        <button onClick={handleProcess} style={{ marginLeft: "2em" }}>
+          开始处理
         </button>
       </div>
 
-      <button
-        onClick={handleRun}
-        style={{ width: "100%", padding: "10px", backgroundColor: "#2196f3", color: "white" }}
-      >
-        执行 {mode === "encrypt" ? "加密" : "解密"}
-      </button>
-
-      <h3 style={{ marginTop: 24 }}>输出结果</h3>
-      <textarea
-        readOnly
-        rows={4}
-        value={output}
-        style={{ width: "100%", backgroundColor: "#f5f5f5", padding: 10 }}
-      />
+      <div>
+        <h3>输出：</h3>
+        <pre
+          style={{
+            background: "#f0f0f0",
+            padding: "1em",
+            whiteSpace: "pre-wrap"
+          }}
+        >
+          {output}
+        </pre>
+      </div>
     </div>
   );
 }
 
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<App />);
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);

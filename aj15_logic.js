@@ -1,25 +1,28 @@
 let WUBI_DICT = {};
 let REVERSE_DICT = {};
+let MAX_WORD_LENGTH = 1;
 
-// 异步加载五笔字典文件
+// 加载词组五笔编码文件
 export async function loadWubiDict() {
-  const res = await fetch("wubi86_full.txt");
+  const res = await fetch("wubi_phrases.txt");
   const text = await res.text();
   const lines = text.trim().split("\n");
 
   WUBI_DICT = {};
   REVERSE_DICT = {};
+  MAX_WORD_LENGTH = 1;
 
   for (const line of lines) {
-    const [ch, code] = line.trim().split(/\s+/);
-    if (ch && code) {
-      WUBI_DICT[ch] = code;
-      REVERSE_DICT[code] = ch;
+    const [phrase, code] = line.trim().split(/\s+/);
+    if (phrase && code) {
+      WUBI_DICT[phrase] = code;
+      REVERSE_DICT[code] = phrase;
+      MAX_WORD_LENGTH = Math.max(MAX_WORD_LENGTH, phrase.length);
     }
   }
 }
 
-// 将字符串切分为单个 UTF-8 字符（中文字符）
+// UTF-8 字符切分
 function splitUTF8Chars(str) {
   const chars = [];
   for (let i = 0; i < str.length;) {
@@ -31,7 +34,7 @@ function splitUTF8Chars(str) {
   return chars;
 }
 
-// 生成斐波那契位移序列
+// 斐波那契位移生成器
 function generateFibShifts(seed, count) {
   const shifts = [seed % 25, (seed + 7) % 25];
   while (shifts.length < count) {
@@ -41,19 +44,34 @@ function generateFibShifts(seed, count) {
   return shifts;
 }
 
-// ✅ 同步加密函数（不会返回 Promise）
+// 加密函数（词组支持）
 export function aj15_encrypt(text) {
   const chars = splitUTF8Chars(text);
-  const shifts = generateFibShifts(34121, chars.length);
-  let result = "";
+  const result = [];
+  const shifts = generateFibShifts(34121, chars.length * 2); // 保证足够长
 
-  for (let i = 0; i < chars.length; i++) {
-    const ch = chars[i];
-    const wubi = WUBI_DICT[ch] || "XX";
-    const shift = shifts[i];
+  let i = 0, k = 0;
+  while (i < chars.length) {
+    let matched = null;
+
+    // 尝试最长词组匹配
+    for (let len = MAX_WORD_LENGTH; len >= 1; len--) {
+      const phrase = chars.slice(i, i + len).join("");
+      if (WUBI_DICT[phrase]) {
+        matched = phrase;
+        break;
+      }
+    }
+
+    if (!matched) {
+      matched = chars[i];
+    }
+
+    const code = WUBI_DICT[matched] || "XX";
+    const shift = shifts[k++];
     let shifted = "";
 
-    for (let c of wubi) {
+    for (const c of code) {
       if (/[A-Z]/.test(c)) {
         const newChar = String.fromCharCode(((c.charCodeAt(0) - 65 + shift) % 26) + 65);
         shifted += newChar;
@@ -62,51 +80,61 @@ export function aj15_encrypt(text) {
       }
     }
 
-    // 每个字附加校验数字（原始字符 Unicode 求和模10）
-    const checksum = Array.from(ch).reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % 10;
-    result += shifted + checksum.toString();
+    // 校验位：Unicode 求和 % 10
+    const checksum = Array.from(matched).reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % 10;
+    result.push(shifted + checksum.toString());
+    i += matched.length;
   }
 
   // 全文末尾校验码
-  const lastChar = text[text.length - 1];
-  result += (lastChar.charCodeAt(0) % 15).toString();
-
-  return result;
+  const lastChar = chars[chars.length - 1];
+  result.push((lastChar.charCodeAt(0) % 15).toString());
+  return result.join("");
 }
 
-// ✅ 同步解密函数（不会返回 Promise）
+// 解密函数（词组支持）
 export function aj15_decrypt(cipher) {
   const lastDigit = cipher.slice(-1);
   const body = cipher.slice(0, -1);
-  const blockCount = Math.floor(body.length / 3);
-
-  const shifts = generateFibShifts(34121, blockCount);
   let result = "";
 
-  for (let i = 0; i < blockCount; i++) {
-    const segment = body.slice(i * 3, i * 3 + 3);
-    const encoded = segment.slice(0, 2);
-    const shift = shifts[i];
-    let originalCode = "";
+  let i = 0, k = 0;
 
-    for (let c of encoded) {
+  while (i + 3 <= body.length) {
+    const seg = body.slice(i, i + 3);
+    const code = seg.slice(0, 2);
+    const checksum = seg[2];
+    const shift = generateFibShifts(34121, k + 1)[k];
+    k++;
+
+    // 逆位移
+    let orig = "";
+    for (const c of code) {
       if (/[A-Z]/.test(c)) {
-        const newChar = String.fromCharCode(((c.charCodeAt(0) - 65 - shift + 26) % 26) + 65);
-        originalCode += newChar;
+        const dec = String.fromCharCode(((c.charCodeAt(0) - 65 - shift + 26) % 26) + 65);
+        orig += dec;
       } else {
-        originalCode += c;
+        orig += c;
       }
     }
 
-    const ch = REVERSE_DICT[originalCode] || "�";
-    result += ch;
+    // 搜索匹配的编码前缀（可能是多段词组）
+    let found = null;
+    for (const key of Object.keys(REVERSE_DICT).sort((a, b) => b.length - a.length)) {
+      if (orig.startsWith(key)) {
+        found = REVERSE_DICT[key];
+        break;
+      }
+    }
+
+    result += found || "�";
+    i += 3;
   }
 
-  // 校验校验位
-  const lastChar = result[result.length - 1];
-  const check = (lastChar.charCodeAt(0) % 15).toString();
+  const checkChar = result[result.length - 1];
+  const check = (checkChar.charCodeAt(0) % 15).toString();
   if (check !== lastDigit) {
-    console.warn("⚠️ 校验失败，密文可能已损坏或被篡改");
+    console.warn("⚠️ 校验失败，可能密文损坏");
   }
 
   return result;
