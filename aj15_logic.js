@@ -1,122 +1,113 @@
-// aj15_logic.js
+let WUBI_DICT = {};
+let REVERSE_DICT = {};
 
-let wubiMap = new Map();
-let reverseWubiMap = new Map();
-let dictionaryLoaded = false;
+// 异步加载五笔字典文件
+export async function loadWubiDict() {
+  const res = await fetch("wubi86_full.txt");
+  const text = await res.text();
+  const lines = text.trim().split("\n");
 
-// 加载字典
-export async function loadWubiDict(path = "/wubi86_full.txt") {
-  const resp = await fetch(path);
-  const text = await resp.text();
-  const lines = text.split("\n");
+  WUBI_DICT = {};
+  REVERSE_DICT = {};
 
-  lines.forEach((line) => {
-    const [char, code] = line.trim().split(/\s+/);
-    if (char && code) {
-      wubiMap.set(char, code);
-      reverseWubiMap.set(code, char);
+  for (const line of lines) {
+    const [ch, code] = line.trim().split(/\s+/);
+    if (ch && code) {
+      WUBI_DICT[ch] = code;
+      REVERSE_DICT[code] = ch;
     }
-  });
+  }
+}
 
-  dictionaryLoaded = true;
-  console.log(`🔠 Loaded ${wubiMap.size} entries from dictionary`);
+// 将字符串切分为单个 UTF-8 字符（中文字符）
+function splitUTF8Chars(str) {
+  const chars = [];
+  for (let i = 0; i < str.length;) {
+    const code = str.codePointAt(i);
+    const ch = String.fromCodePoint(code);
+    chars.push(ch);
+    i += ch.length;
+  }
+  return chars;
 }
 
 // 生成斐波那契位移序列
 function generateFibShifts(seed, count) {
   const shifts = [seed % 25, (seed + 7) % 25];
   while (shifts.length < count) {
-    const next = (shifts.at(-1) + shifts.at(-2)) % 25;
+    const next = (shifts[shifts.length - 1] + shifts[shifts.length - 2]) % 25;
     shifts.push(next);
   }
   return shifts;
 }
 
-// 加密函数
-export async function aj15_encrypt(text) {
-  if (!dictionaryLoaded) await loadWubiDict();
+// ✅ 同步加密函数（不会返回 Promise）
+export function aj15_encrypt(text) {
+  const chars = splitUTF8Chars(text);
+  const shifts = generateFibShifts(34121, chars.length);
+  let result = "";
 
-  const utf8chars = extractUTF8Chars(text);
-  const shifts = generateFibShifts(34121, utf8chars.length);
-  let cipher = "";
-
-  utf8chars.forEach((ch, i) => {
-    let wubi = wubiMap.get(ch) || "XX";
-    let shift = shifts[i];
-
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    const wubi = WUBI_DICT[ch] || "XX";
+    const shift = shifts[i];
     let shifted = "";
+
     for (let c of wubi) {
       if (/[A-Z]/.test(c)) {
-        shifted += String.fromCharCode(
-          "A".charCodeAt(0) + ((c.charCodeAt(0) - 65 + shift) % 26)
-        );
+        const newChar = String.fromCharCode(((c.charCodeAt(0) - 65 + shift) % 26) + 65);
+        shifted += newChar;
       } else {
         shifted += c;
       }
     }
 
-    const checksum = [...ch].reduce((sum, c) => sum + c.charCodeAt(0), 0) % 10;
-    cipher += shifted + checksum;
-  });
+    // 每个字附加校验数字（原始字符 Unicode 求和模10）
+    const checksum = Array.from(ch).reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % 10;
+    result += shifted + checksum.toString();
+  }
 
-  const finalCheck = text.charCodeAt(text.length - 1) % 15;
-  return cipher + finalCheck;
+  // 全文末尾校验码
+  const lastChar = text[text.length - 1];
+  result += (lastChar.charCodeAt(0) % 15).toString();
+
+  return result;
 }
 
-// 解密函数
-export async function aj15_decrypt(cipher) {
-  if (!dictionaryLoaded) await loadWubiDict();
+// ✅ 同步解密函数（不会返回 Promise）
+export function aj15_decrypt(cipher) {
+  const lastDigit = cipher.slice(-1);
+  const body = cipher.slice(0, -1);
+  const blockCount = Math.floor(body.length / 3);
 
-  const checkDigit = Number(cipher.at(-1));
-  const data = cipher.slice(0, -1);
-  let chars = [];
-
-  const blockCount = data.length / 3;
   const shifts = generateFibShifts(34121, blockCount);
+  let result = "";
 
   for (let i = 0; i < blockCount; i++) {
-    const block = data.slice(i * 3, i * 3 + 3);
-    const code = block.slice(0, 2);
+    const segment = body.slice(i * 3, i * 3 + 3);
+    const encoded = segment.slice(0, 2);
     const shift = shifts[i];
+    let originalCode = "";
 
-    let original = "";
-    for (let j = 0; j < 2; j++) {
-      const c = code[j];
+    for (let c of encoded) {
       if (/[A-Z]/.test(c)) {
-        original += String.fromCharCode(
-          "A".charCodeAt(0) + ((c.charCodeAt(0) - 65 - shift + 26) % 26)
-        );
+        const newChar = String.fromCharCode(((c.charCodeAt(0) - 65 - shift + 26) % 26) + 65);
+        originalCode += newChar;
       } else {
-        original += c;
+        originalCode += c;
       }
     }
 
-    const char = reverseWubiMap.get(original) || "?";
-    chars.push(char);
+    const ch = REVERSE_DICT[originalCode] || "�";
+    result += ch;
   }
 
-  const plain = chars.join("");
-  if (plain.charCodeAt(plain.length - 1) % 15 !== checkDigit) {
-    console.warn("⚠️ 校验和失败，数据可能被篡改");
+  // 校验校验位
+  const lastChar = result[result.length - 1];
+  const check = (lastChar.charCodeAt(0) % 15).toString();
+  if (check !== lastDigit) {
+    console.warn("⚠️ 校验失败，密文可能已损坏或被篡改");
   }
 
-  return plain;
-}
-
-// 提取 UTF-8 汉字
-function extractUTF8Chars(str) {
-  const result = [];
-  for (let i = 0; i < str.length; ) {
-    const code = str.charCodeAt(i);
-    if (code >= 0x4e00 && code <= 0x9fff) {
-      result.push(str[i]);
-      i++;
-    } else {
-      result.push(str[i]);
-      i++;
-    }
-  }
   return result;
 }
-export const loadDictionary = loadWubiDict;
-
