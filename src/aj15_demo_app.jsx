@@ -36,7 +36,7 @@ function App() {
 
   return (
     <div style={{ maxWidth: 640, margin: "40px auto", padding: 24, fontFamily: "sans-serif" }}>
-      <h1>🔐 AJ‑15 中文加密演示</h1>
+      <h1>🔐 AJ‑15 中文加密系统</h1>
       <p>{dictStatus}</p>
 
       <textarea
