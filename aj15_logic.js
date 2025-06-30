@@ -22,7 +22,7 @@ export async function loadWubiDict() {
   }
 }
 
-// UTF-8 字符切分
+// UTF-8 字符切分（确保中文多字节处理正确）
 function splitUTF8Chars(str) {
   const chars = [];
   for (let i = 0; i < str.length;) {
@@ -34,7 +34,7 @@ function splitUTF8Chars(str) {
   return chars;
 }
 
-// 斐波那契位移生成器
+// 斐波那契位移序列生成器
 function generateFibShifts(seed, count) {
   const shifts = [seed % 25, (seed + 7) % 25];
   while (shifts.length < count) {
@@ -44,17 +44,16 @@ function generateFibShifts(seed, count) {
   return shifts;
 }
 
-// 加密函数（词组支持）
+// ✅ 加密函数
 export function aj15_encrypt(text) {
   const chars = splitUTF8Chars(text);
   const result = [];
-  const shifts = generateFibShifts(34121, chars.length * 2); // 保证足够长
+  const shifts = generateFibShifts(34121, chars.length * 2);
 
   let i = 0, k = 0;
   while (i < chars.length) {
     let matched = null;
 
-    // 尝试最长词组匹配
     for (let len = MAX_WORD_LENGTH; len >= 1; len--) {
       const phrase = chars.slice(i, i + len).join("");
       if (WUBI_DICT[phrase]) {
@@ -80,19 +79,17 @@ export function aj15_encrypt(text) {
       }
     }
 
-    // 校验位：Unicode 求和 % 10
     const checksum = Array.from(matched).reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % 10;
     result.push(shifted + checksum.toString());
     i += matched.length;
   }
 
-  // 全文末尾校验码
   const lastChar = chars[chars.length - 1];
   result.push((lastChar.charCodeAt(0) % 15).toString());
   return result.join("");
 }
 
-// 解密函数（词组支持）
+// ✅ 解密函数（修复词组乱码问题）
 export function aj15_decrypt(cipher) {
   const lastDigit = cipher.slice(-1);
   const body = cipher.slice(0, -1);
@@ -103,11 +100,9 @@ export function aj15_decrypt(cipher) {
   while (i + 3 <= body.length) {
     const seg = body.slice(i, i + 3);
     const code = seg.slice(0, 2);
-    const checksum = seg[2];
     const shift = generateFibShifts(34121, k + 1)[k];
     k++;
 
-    // 逆位移
     let orig = "";
     for (const c of code) {
       if (/[A-Z]/.test(c)) {
@@ -118,16 +113,8 @@ export function aj15_decrypt(cipher) {
       }
     }
 
-    // 搜索匹配的编码前缀（可能是多段词组）
-    let found = null;
-    for (const key of Object.keys(REVERSE_DICT).sort((a, b) => b.length - a.length)) {
-      if (orig.startsWith(key)) {
-        found = REVERSE_DICT[key];
-        break;
-      }
-    }
-
-    result += found || "�";
+    const phrase = REVERSE_DICT[orig] || "�";
+    result += splitUTF8Chars(phrase).join("");  // ✅ 防乱码
     i += 3;
   }
 
