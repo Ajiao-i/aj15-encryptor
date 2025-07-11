@@ -2,7 +2,7 @@ let WUBI_DICT = {};
 let REVERSE_DICT = {};
 let MAX_WORD_LENGTH = 1;
 
-// 加载词组五笔编码文件
+// 异步加载五笔词组字典
 export async function loadWubiDict() {
   const res = await fetch("wubi_phrases.txt");
   const text = await res.text();
@@ -22,7 +22,7 @@ export async function loadWubiDict() {
   }
 }
 
-// UTF-8 字符切分（确保中文多字节处理正确）
+// UTF-8安全切分（支持中文字符）
 function splitUTF8Chars(str) {
   const chars = [];
   for (let i = 0; i < str.length;) {
@@ -34,7 +34,7 @@ function splitUTF8Chars(str) {
   return chars;
 }
 
-// 斐波那契位移序列生成器
+// 斐波那契位移
 function generateFibShifts(seed, count) {
   const shifts = [seed % 25, (seed + 7) % 25];
   while (shifts.length < count) {
@@ -86,15 +86,15 @@ export function aj15_encrypt(text) {
 
   const lastChar = chars[chars.length - 1];
   result.push((lastChar.charCodeAt(0) % 15).toString());
+
   return result.join("");
 }
 
-// ✅ 解密函数（修复词组乱码问题）
+// ✅ 解密函数，修复多字符还原乱码问题
 export function aj15_decrypt(cipher) {
   const lastDigit = cipher.slice(-1);
   const body = cipher.slice(0, -1);
-  let result = "";
-
+  const segments = [];
   let i = 0, k = 0;
 
   while (i + 3 <= body.length) {
@@ -113,15 +113,24 @@ export function aj15_decrypt(cipher) {
       }
     }
 
-    const phrase = REVERSE_DICT[orig] || "�";
-    result += splitUTF8Chars(phrase).join("");  // ✅ 防乱码
+    segments.push(orig);
     i += 3;
+  }
+
+  let result = "";
+  for (const code of segments) {
+    const phrase = REVERSE_DICT[code];
+    if (phrase) {
+      result += phrase;
+    } else {
+      result += "�"; // 未知编码
+    }
   }
 
   const checkChar = result[result.length - 1];
   const check = (checkChar.charCodeAt(0) % 15).toString();
   if (check !== lastDigit) {
-    console.warn("⚠️ 校验失败，可能密文损坏");
+    console.warn("⚠️ 校验失败，密文可能已损坏");
   }
 
   return result;
