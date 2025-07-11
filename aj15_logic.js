@@ -1,8 +1,11 @@
-let WUBI_DICT = {};
-let REVERSE_DICT = {};
-let MAX_WORD_LENGTH = 1;
+let WUBI_DICT = {};        // 词组 => 编码
+let REVERSE_DICT = {};     // 编码 => 词组
+let MAX_WORD_LENGTH = 1;   // 最长词组字数（如“劳苦功高”为4）
 
-// 异步加载五笔词组字典
+// ✅ 同步标记，确保字典加载完再运行加解密
+let isDictLoaded = false;
+
+// 异步加载词组五笔字典
 export async function loadWubiDict() {
   const res = await fetch("wubi_phrases.txt");
   const text = await res.text();
@@ -20,9 +23,11 @@ export async function loadWubiDict() {
       MAX_WORD_LENGTH = Math.max(MAX_WORD_LENGTH, phrase.length);
     }
   }
+
+  isDictLoaded = true;
 }
 
-// UTF-8安全切分（支持中文字符）
+// 分割 UTF-8 字符串为单个字符（支持汉字）
 function splitUTF8Chars(str) {
   const chars = [];
   for (let i = 0; i < str.length;) {
@@ -34,7 +39,7 @@ function splitUTF8Chars(str) {
   return chars;
 }
 
-// 斐波那契位移
+// 斐波那契位移生成器（取模 25）
 function generateFibShifts(seed, count) {
   const shifts = [seed % 25, (seed + 7) % 25];
   while (shifts.length < count) {
@@ -44,77 +49,77 @@ function generateFibShifts(seed, count) {
   return shifts;
 }
 
-// ✅ 加密函数
-export function aj15_encrypt(text) {
-  const chars = splitUTF8Chars(text);
-  const result = [];
+// ✅ 加密函数（必须保证字典已加载）
+export function aj15_encrypt(input) {
+  if (!isDictLoaded) throw new Error("五笔字典尚未加载");
+
+  const chars = splitUTF8Chars(input);
   const shifts = generateFibShifts(34121, chars.length * 2);
+  let i = 0, shiftIndex = 0;
+  let encrypted = "";
 
-  let i = 0, k = 0;
   while (i < chars.length) {
-    let matched = null;
-
-    for (let len = MAX_WORD_LENGTH; len >= 1; len--) {
-      const phrase = chars.slice(i, i + len).join("");
-      if (WUBI_DICT[phrase]) {
-        matched = phrase;
+    let match = null;
+    for (let len = Math.min(MAX_WORD_LENGTH, chars.length - i); len >= 1; len--) {
+      const candidate = chars.slice(i, i + len).join("");
+      if (WUBI_DICT[candidate]) {
+        match = candidate;
         break;
       }
     }
 
-    if (!matched) {
-      matched = chars[i];
-    }
+    if (!match) match = chars[i];
 
-    const code = WUBI_DICT[matched] || "XX";
-    const shift = shifts[k++];
+    const code = WUBI_DICT[match] || "XX";
+    const shift = shifts[shiftIndex++];
     let shifted = "";
 
     for (const c of code) {
       if (/[A-Z]/.test(c)) {
-        const newChar = String.fromCharCode(((c.charCodeAt(0) - 65 + shift) % 26) + 65);
-        shifted += newChar;
+        const s = ((c.charCodeAt(0) - 65 + shift) % 26) + 65;
+        shifted += String.fromCharCode(s);
       } else {
         shifted += c;
       }
     }
 
-    const checksum = Array.from(matched).reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % 10;
-    result.push(shifted + checksum.toString());
-    i += matched.length;
+    const checksum = [...match].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 10;
+    encrypted += shifted + checksum;
+
+    i += match.length;
   }
 
-  const lastChar = chars[chars.length - 1];
-  result.push((lastChar.charCodeAt(0) % 15).toString());
-
-  return result.join("");
+  const globalCheck = chars[chars.length - 1].charCodeAt(0) % 15;
+  encrypted += globalCheck.toString();
+  return encrypted;
 }
 
-// ✅ 解密函数，修复多字符还原乱码问题
+// ✅ 解密函数
 export function aj15_decrypt(cipher) {
-  const lastDigit = cipher.slice(-1);
-  const body = cipher.slice(0, -1);
+  if (!isDictLoaded) throw new Error("五笔字典尚未加载");
+
   const segments = [];
-  let i = 0, k = 0;
+  const globalCheckDigit = cipher.slice(-1);
+  const body = cipher.slice(0, -1);
+  const blockCount = body.length / 3;
 
-  while (i + 3 <= body.length) {
-    const seg = body.slice(i, i + 3);
-    const code = seg.slice(0, 2);
-    const shift = generateFibShifts(34121, k + 1)[k];
-    k++;
+  const shifts = generateFibShifts(34121, blockCount);
+  for (let i = 0; i < blockCount; i++) {
+    const block = body.slice(i * 3, i * 3 + 3);
+    const code = block.slice(0, 2);
+    const shift = shifts[i];
+    let decoded = "";
 
-    let orig = "";
     for (const c of code) {
       if (/[A-Z]/.test(c)) {
-        const dec = String.fromCharCode(((c.charCodeAt(0) - 65 - shift + 26) % 26) + 65);
-        orig += dec;
+        const d = ((c.charCodeAt(0) - 65 - shift + 26) % 26) + 65;
+        decoded += String.fromCharCode(d);
       } else {
-        orig += c;
+        decoded += c;
       }
     }
 
-    segments.push(orig);
-    i += 3;
+    segments.push(decoded);
   }
 
   let result = "";
@@ -123,14 +128,14 @@ export function aj15_decrypt(cipher) {
     if (phrase) {
       result += phrase;
     } else {
-      result += "�"; // 未知编码
+      result += "�";  // 未知编码，标为乱码
     }
   }
 
-  const checkChar = result[result.length - 1];
-  const check = (checkChar.charCodeAt(0) % 15).toString();
-  if (check !== lastDigit) {
-    console.warn("⚠️ 校验失败，密文可能已损坏");
+  const lastChar = result[result.length - 1];
+  const verify = lastChar.charCodeAt(0) % 15;
+  if (verify.toString() !== globalCheckDigit) {
+    console.warn("⚠️ 校验失败，密文可能已损坏或被篡改");
   }
 
   return result;
