@@ -1,95 +1,77 @@
 import React, { useState, useEffect } from "react";
-import ReactDOM from "react-dom/client";
-import {
-  aj15_encrypt,
-  aj15_decrypt,
-  loadWubiDict
-} from "../aj15_logic.js";
+import { loadWubiDict, aj15_encrypt, aj15_decrypt } from "./aj15_logic";
 
-function App() {
+export default function Aj15DemoApp() {
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [mode, setMode] = useState("encrypt");
-  const [dictLoaded, setDictLoaded] = useState(false);
 
   useEffect(() => {
-    loadWubiDict().then(() => {
-      setDictLoaded(true);
-    });
+    async function initDict() {
+      console.log("📥 正在加载五笔词典...");
+      await loadWubiDict();
+      console.log("✅ 词典加载完成");
+    }
+    initDict();
   }, []);
 
   const handleProcess = () => {
-    if (!dictLoaded) {
-      setOutput("字典未加载！");
-      return;
-    }
-
     try {
-      const result =
-        mode === "encrypt"
-          ? aj15_encrypt(input)
-          : aj15_decrypt(input);
-      setOutput(result);
-    } catch (e) {
-      console.error(e);
-      setOutput("处理失败，请检查输入。");
+      if (mode === "encrypt") {
+        const encrypted = aj15_encrypt(input);
+        console.log("🔹 加密调试信息");
+        console.log("原文:", input);
+        console.log("加密结果:", encrypted);
+        setOutput(encrypted);
+      } else {
+        const decrypted = aj15_decrypt(input);
+        console.log("🔹 解密调试信息");
+        console.log("密文:", input);
+        console.log("解密结果:", decrypted);
+        setOutput(decrypted);
+      }
+    } catch (err) {
+      console.error("❌ 处理出错:", err);
     }
   };
 
   return (
-    <div style={{ padding: "2em", fontFamily: "Arial" }}>
-      <h1>AJ-15 中文加密/解密工具</h1>
-
-      <div style={{ marginBottom: "1em" }}>
-        <textarea
-          rows={5}
-          style={{ width: "100%" }}
-          placeholder="请输入内容..."
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-        />
-      </div>
-
-      <div style={{ marginBottom: "1em" }}>
+    <div style={{ padding: "20px" }}>
+      <h1>AJ15 加解密测试工具</h1>
+      <textarea
+        rows="3"
+        cols="50"
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        placeholder="输入文本或密文"
+      />
+      <div>
         <label>
           <input
             type="radio"
-            name="mode"
             value="encrypt"
             checked={mode === "encrypt"}
             onChange={() => setMode("encrypt")}
           />
           加密
         </label>
-        <label style={{ marginLeft: "1em" }}>
+        <label>
           <input
             type="radio"
-            name="mode"
             value="decrypt"
             checked={mode === "decrypt"}
             onChange={() => setMode("decrypt")}
           />
           解密
         </label>
-        <button onClick={handleProcess} style={{ marginLeft: "2em" }}>
-          开始处理
-        </button>
       </div>
-
+      <button onClick={handleProcess}>
+        {mode === "encrypt" ? "加密" : "解密"}
+      </button>
       <div>
         <h3>输出：</h3>
-        <pre
-          style={{
-            background: "#f0f0f0",
-            padding: "1em",
-            whiteSpace: "pre-wrap"
-          }}
-        >
-          {output}
-        </pre>
+        <pre>{output}</pre>
       </div>
     </div>
   );
 }
-
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
