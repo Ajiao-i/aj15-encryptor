@@ -1,77 +1,47 @@
-import React, { useState, useEffect } from "react";
-import { loadWubiDict, aj15_encrypt, aj15_decrypt } from "./aj15_logic";
+import React, { useState } from "react";
+import { aj15_encrypt, aj15_decrypt } from "./aj15_logic.js"; // 注意加了 .js 后缀
 
-export default function Aj15DemoApp() {
-  const [input, setInput] = useState("");
-  const [output, setOutput] = useState("");
-  const [mode, setMode] = useState("encrypt");
+export default function AJ15DemoApp() {
+  const [inputText, setInputText] = useState("");
+  const [outputText, setOutputText] = useState("");
 
-  useEffect(() => {
-    async function initDict() {
-      console.log("📥 正在加载五笔词典...");
-      await loadWubiDict();
-      console.log("✅ 词典加载完成");
-    }
-    initDict();
-  }, []);
+  const handleEncrypt = () => {
+    console.log("[加密] 原文:", inputText);
+    const result = aj15_encrypt(inputText);
+    console.log("[加密] 加密结果:", result);
+    setOutputText(result);
+  };
 
-  const handleProcess = () => {
-    try {
-      if (mode === "encrypt") {
-        const encrypted = aj15_encrypt(input);
-        console.log("🔹 加密调试信息");
-        console.log("原文:", input);
-        console.log("加密结果:", encrypted);
-        setOutput(encrypted);
-      } else {
-        const decrypted = aj15_decrypt(input);
-        console.log("🔹 解密调试信息");
-        console.log("密文:", input);
-        console.log("解密结果:", decrypted);
-        setOutput(decrypted);
-      }
-    } catch (err) {
-      console.error("❌ 处理出错:", err);
-    }
+  const handleDecrypt = () => {
+    console.log("[解密] 密文:", inputText);
+    const result = aj15_decrypt(inputText);
+    console.log("[解密] 解密结果:", result);
+    setOutputText(result);
   };
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h1>AJ15 加解密测试工具</h1>
+    <div style={{ fontFamily: "sans-serif", padding: "20px" }}>
+      <h2>AJ15 加解密演示</h2>
       <textarea
-        rows="3"
-        cols="50"
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        placeholder="输入文本或密文"
+        rows={4}
+        style={{ width: "100%", marginBottom: "10px" }}
+        value={inputText}
+        onChange={(e) => setInputText(e.target.value)}
+        placeholder="在这里输入要加密或解密的文本"
       />
-      <div>
-        <label>
-          <input
-            type="radio"
-            value="encrypt"
-            checked={mode === "encrypt"}
-            onChange={() => setMode("encrypt")}
-          />
+      <div style={{ marginBottom: "10px" }}>
+        <button onClick={handleEncrypt} style={{ marginRight: "10px" }}>
           加密
-        </label>
-        <label>
-          <input
-            type="radio"
-            value="decrypt"
-            checked={mode === "decrypt"}
-            onChange={() => setMode("decrypt")}
-          />
-          解密
-        </label>
+        </button>
+        <button onClick={handleDecrypt}>解密</button>
       </div>
-      <button onClick={handleProcess}>
-        {mode === "encrypt" ? "加密" : "解密"}
-      </button>
-      <div>
-        <h3>输出：</h3>
-        <pre>{output}</pre>
-      </div>
+      <textarea
+        rows={4}
+        style={{ width: "100%", marginTop: "10px" }}
+        value={outputText}
+        readOnly
+        placeholder="输出结果会显示在这里"
+      />
     </div>
   );
 }
