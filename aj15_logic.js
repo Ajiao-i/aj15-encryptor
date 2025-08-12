@@ -1,126 +1,94 @@
-let WUBI_DICT = {};
-let REVERSE_DICT = {};
+// aj15_logic.js
+import fs from "fs";
 
-// 异步加载五笔词典
-export async function loadWubiDict() {
-  const res = await fetch("wubi_phrases.txt");
-  const text = await res.text();
-  const lines = text.trim().split("\n");
-
-  WUBI_DICT = {};
-  REVERSE_DICT = {};
-
-  for (const line of lines) {
-    const [ch, code] = line.trim().split(/\s+/);
-    if (ch && code) {
-      WUBI_DICT[ch] = code.toUpperCase();
-      REVERSE_DICT[code.toUpperCase()] = ch;
+// 载入五笔词典（86版简码）
+const dictRaw = fs.readFileSync("./wubi_phrases.txt", "utf8").split("\n");
+const wubiDict = {};
+dictRaw.forEach(line => {
+    const [char, code] = line.trim().split(/\s+/);
+    if (char && code) {
+        wubiDict[char] = code.toUpperCase();
     }
-  }
-  console.log("✅ 词典加载成功：", Object.keys(WUBI_DICT).length, "条");
-}
+});
 
-// 切分字符串为 Unicode 字符
-function splitUTF8Chars(str) {
-  const chars = [];
-  for (let i = 0; i < str.length;) {
-    const code = str.codePointAt(i);
-    const ch = String.fromCodePoint(code);
-    chars.push(ch);
-    i += ch.length;
-  }
-  return chars;
-}
-
-// 生成位移序列
-function generateFibShifts(seed, count) {
-  const shifts = [seed % 25, (seed + 7) % 25];
-  while (shifts.length < count) {
-    const next = (shifts[shifts.length - 1] + shifts[shifts.length - 2]) % 25;
-    shifts.push(next);
-  }
-  return shifts;
-}
-
-// 同步加密
-export function aj15_encrypt(text) {
-  const chars = splitUTF8Chars(text);
-  const shifts = generateFibShifts(34121, chars.length);
-  let result = "";
-
-  for (let i = 0; i < chars.length; i++) {
-    const ch = chars[i];
-    const wubi = (WUBI_DICT[ch] || "XX").toUpperCase();
-    const shift = shifts[i];
-
-    // 位移
-    let shifted = "";
-    for (let c of wubi) {
-      if (/[A-Z]/.test(c)) {
-        shifted += String.fromCharCode(((c.charCodeAt(0) - 65 + shift) % 26) + 65);
-      } else {
-        shifted += c;
-      }
+// 生成斐波那契序列并取 mod 26
+function generateFiboMod26(seed, length) {
+    const seq = [];
+    let a = seed % 26;
+    let b = (seed + 1) % 26;
+    for (let i = 0; i < length; i++) {
+        seq.push(a);
+        const next = (a + b) % 26;
+        a = b;
+        b = next;
     }
-
-    // 记录编码长度
-    const lenMarker = wubi.length.toString();
-
-    // 校验位
-    const checksum = Array.from(ch).reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % 10;
-
-    result += lenMarker + shifted + checksum.toString();
-  }
-
-  // 全文末尾校验
-  const lastChar = text[text.length - 1];
-  result += (lastChar.charCodeAt(0) % 15).toString();
-
-  return result;
+    return seq;
 }
 
-// 同步解密
-export function aj15_decrypt(cipher) {
-  const lastDigit = cipher.slice(-1);
-  const body = cipher.slice(0, -1);
-  let i = 0;
-  let result = "";
-
-  let index = 0;
-  const shifts = generateFibShifts(34121, 9999); // 足够长的序列
-
-  while (index < body.length) {
-    const lenMarker = parseInt(body[index], 10); // 编码长度
-    index += 1;
-
-    const encoded = body.slice(index, index + lenMarker);
-    index += lenMarker;
-
-    const shift = shifts[i];
-    i++;
-
-    let originalCode = "";
-    for (let c of encoded) {
-      if (/[A-Z]/.test(c)) {
-        originalCode += String.fromCharCode(((c.charCodeAt(0) - 65 - shift + 26) % 26) + 65);
-      } else {
-        originalCode += c;
-      }
+// 计算三字节和 mod 10 校验
+function checksumChar(char) {
+    const bytes = Buffer.from(char, "utf16le");
+    let sum = 0;
+    for (let i = 0; i < bytes.length; i++) {
+        sum += bytes[i];
     }
+    return String(sum % 10);
+}
 
-    const checksum = body[index]; // 校验位
-    index += 1;
+// 将字母位移
+function shiftChar(char, shift) {
+    const base = char >= "A" && char <= "Z" ? 65 : char >= "a" && char <= "z" ? 97 : null;
+    if (base === null) return char;
+    return String.fromCharCode((char.charCodeAt(0) - base + shift + 26) % 26 + base);
+}
 
-    const ch = REVERSE_DICT[originalCode] || "�";
-    result += ch;
-  }
+// 加密
+export function encrypt(text) {
+    let encrypted = "";
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const wubi = wubiDict[char] || char;
+        const seed = char.charCodeAt(0);
+        const fibSeq = generateFiboMod26(seed, wubi.length);
+        let shifted = "";
+        for (let j = 0; j < wubi.length; j++) {
+            shifted += shiftChar(wubi[j], fibSeq[j]);
+        }
+        const chk = checksumChar(char);
+        encrypted += shifted + chk;
+    }
+    // 校验系统：末字符Unicode值 mod 15 == 0
+    encrypted += String.fromCharCode(((encrypted.charCodeAt(encrypted.length - 1) + (15 - (encrypted.charCodeAt(encrypted.length - 1) % 15))) % 65536));
+    return encrypted;
+}
 
-  // 校验
-  const lastChar = result[result.length - 1];
-  const check = (lastChar.charCodeAt(0) % 15).toString();
-  if (check !== lastDigit) {
-    console.warn("⚠️ 校验失败，密文可能被篡改");
-  }
-
-  return result;
+// 解密
+export function decrypt(cipher) {
+    let data = cipher.slice(0, -1); // 去掉末尾校验符
+    let result = "";
+    let i = 0;
+    while (i < data.length) {
+        let block = data.slice(i, i + 3); // 两位编码 + 1位校验
+        const codePart = block.slice(0, -1);
+        const chk = block.slice(-1);
+        // 尝试匹配字典
+        let foundChar = null;
+        for (const [char, wubi] of Object.entries(wubiDict)) {
+            if (wubi.length === codePart.length) {
+                const seed = char.charCodeAt(0);
+                const fibSeq = generateFiboMod26(seed, wubi.length);
+                let shifted = "";
+                for (let j = 0; j < wubi.length; j++) {
+                    shifted += shiftChar(wubi[j], fibSeq[j]);
+                }
+                if (shifted === codePart && checksumChar(char) === chk) {
+                    foundChar = char;
+                    break;
+                }
+            }
+        }
+        result += foundChar || "?";
+        i += 3;
+    }
+    return result;
 }
